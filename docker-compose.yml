@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: smartdisk-postgres
+    environment:
+      POSTGRES_USER: smartdisk
+      POSTGRES_PASSWORD: smartdisk
+      POSTGRES_DB: smartdisk
+    ports:
+      - "5432:5432"
+    volumes:
+      - smartdisk-pg-data:/var/lib/postgresql/data
+
+volumes:
+  smartdisk-pg-data:
