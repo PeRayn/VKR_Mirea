@@ -10,8 +10,9 @@ email-validator==2.2.0
 python-dotenv==1.1.0
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
 sentence-transformers==3.4.1
-llama-cpp-python==0.3.8
+llama-cpp-python==0.3.20
 transformers==4.51.3
 torch==2.6.0
 pypdf==5.4.0

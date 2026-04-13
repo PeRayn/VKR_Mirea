@@ -1,16 +1,22 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "./api";
 import AuthPage from "./pages/AuthPage";
 import FilesPage from "./pages/FilesPage";
 import ChatPage from "./pages/ChatPage";
 
 const TOKEN_KEY = "smartdisk_token";
+const PAGE_KEY = "smartdisk_page";
 
 export default function App() {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) ?? "");
   const [user, setUser] = useState(null);
-  const [activePage, setActivePage] = useState("files");
-  const [authLoading, setAuthLoading] = useState(false);
+  const [page, setPageRaw] = useState(() => localStorage.getItem(PAGE_KEY) ?? "files");
+
+  function setPage(p) {
+    localStorage.setItem(PAGE_KEY, p);
+    setPageRaw(p);
+  }
+  const [loading, setLoading] = useState(false);
 
   function logout() {
     localStorage.removeItem(TOKEN_KEY);
@@ -18,77 +24,70 @@ export default function App() {
     setUser(null);
   }
 
-  function onAuthenticated(nextToken) {
-    localStorage.setItem(TOKEN_KEY, nextToken);
-    setToken(nextToken);
+  function onAuth(t) {
+    localStorage.setItem(TOKEN_KEY, t);
+    setToken(t);
   }
 
   useEffect(() => {
-    if (!token) {
-      return;
-    }
+    if (!token) return;
     let cancelled = false;
-    setAuthLoading(true);
+    setLoading(true);
     api("/auth/me", {}, token, logout)
-      .then((payload) => {
-        if (!cancelled) {
-          setUser(payload);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          logout();
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setAuthLoading(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
+      .then((u) => { if (!cancelled) setUser(u); })
+      .catch(() => { if (!cancelled) logout(); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [token]);
 
-  const shell = useMemo(() => {
-    if (!token) {
-      return <AuthPage onAuthenticated={onAuthenticated} />;
-    }
-    if (authLoading || !user) {
-      return <p>Authorizing...</p>;
-    }
-    if (activePage === "chat") {
-      return <ChatPage token={token} onUnauthorized={logout} />;
-    }
-    return <FilesPage token={token} onUnauthorized={logout} />;
-  }, [activePage, authLoading, token, user]);
+  if (!token) {
+    return (
+      <div className="app-shell">
+        <header className="app-header">
+          <h1>Умный Диск</h1>
+        </header>
+        <AuthPage onAuth={onAuth} />
+      </div>
+    );
+  }
+
+  if (loading || !user) {
+    return (
+      <div className="app-shell">
+        <header className="app-header">
+          <h1>Умный Диск</h1>
+        </header>
+        <div className="app-content" style={{ textAlign: "center", paddingTop: 80 }}>
+          <div className="spinner" />
+          <p style={{ marginTop: 12, color: "var(--text-dim)" }}>Авторизация...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <main className="app-shell">
+    <div className="app-shell">
       <header className="app-header">
-        <h1>Smart Disk</h1>
-        {token && user ? (
-          <div className="header-row">
-            <span>{user.email}</span>
-            <nav className="tabs">
-              <button
-                className={activePage === "files" ? "active" : ""}
-                onClick={() => setActivePage("files")}
-              >
-                Files
-              </button>
-              <button
-                className={activePage === "chat" ? "active" : ""}
-                onClick={() => setActivePage("chat")}
-              >
-                Chat
-              </button>
-            </nav>
-            <button onClick={logout}>Logout</button>
-          </div>
-        ) : null}
+        <h1>Умный Диск</h1>
+        <div className="header-right">
+          <span className="user-email">{user.email}</span>
+          <nav className="tabs">
+            <button className={page === "files" ? "active" : ""} onClick={() => setPage("files")}>
+              Файлы
+            </button>
+            <button className={page === "chat" ? "active" : ""} onClick={() => setPage("chat")}>
+              Чат
+            </button>
+          </nav>
+          <button className="btn btn-ghost btn-sm" onClick={logout}>Выйти</button>
+        </div>
       </header>
-      {shell}
-    </main>
+
+      <div className="app-content">
+        {page === "chat"
+          ? <ChatPage token={token} onUnauthorized={logout} />
+          : <FilesPage token={token} onUnauthorized={logout} />}
+      </div>
+    </div>
   );
 }

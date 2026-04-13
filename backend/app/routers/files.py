@@ -1,8 +1,9 @@
 import uuid
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +18,19 @@ from app.core.config import get_settings
 settings = get_settings()
 router = APIRouter(prefix="/files", tags=["files"])
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md"}
+
+
+def _content_disposition(disposition: str, filename: str) -> str:
+    try:
+        filename.encode("latin-1")
+        safe = filename.replace('"', "_")
+        return f'{disposition}; filename="{safe}"'
+    except UnicodeEncodeError:
+        ext = Path(filename).suffix
+        ascii_fallback = "".join(c if ord(c) < 128 else "_" for c in Path(filename).stem) or "file"
+        ascii_fallback = f"{ascii_fallback}{ext}" if ext else ascii_fallback
+        encoded = quote(filename, safe="")
+        return f'{disposition}; filename="{ascii_fallback}"; filename*=UTF-8\'\'{encoded}'
 
 
 def _validate_upload(upload: UploadFile, size_bytes: int) -> None:
@@ -100,7 +114,50 @@ async def download_file(
     return StreamingResponse(
         iter([payload]),
         media_type=file_record.mime_type,
-        headers={"Content-Disposition": f'attachment; filename="{file_record.original_name}"'},
+        headers={"Content-Disposition": _content_disposition("attachment", file_record.original_name)},
+    )
+
+
+@router.get("/{file_id}/content")
+async def file_content(
+    file_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> PlainTextResponse:
+    file_record = await db.scalar(
+        select(FileRecord).where(FileRecord.id == file_id, FileRecord.user_id == user.id)
+    )
+    if not file_record:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+
+    payload = storage.read(user.id, file_record.stored_name)
+    try:
+        text = extract_text(file_record.original_name, payload)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Could not extract text from file",
+        ) from exc
+    return PlainTextResponse(text)
+
+
+@router.get("/{file_id}/view")
+async def view_file(
+    file_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    file_record = await db.scalar(
+        select(FileRecord).where(FileRecord.id == file_id, FileRecord.user_id == user.id)
+    )
+    if not file_record:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+
+    payload = storage.read(user.id, file_record.stored_name)
+    return StreamingResponse(
+        iter([payload]),
+        media_type=file_record.mime_type,
+        headers={"Content-Disposition": _content_disposition("inline", file_record.original_name)},
     )
 
 

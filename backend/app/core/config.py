@@ -13,25 +13,28 @@ class Settings(BaseSettings):
     secret_key: str = "change-me"
     access_token_expire_minutes: int = 120
     database_url: str
-    cors_origins: str = "http://localhost:5173"
+    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     files_root: Path = Path("./data/files")
     models_root: Path = Path("../models")
     max_upload_mb: int = 20
 
     embedding_model: str = "../models/bge-m3"
     embedding_dim: int = 1024
-    top_k: int = 5
-    retrieval_top_k: int = 10
+    top_k: int = 8
+    retrieval_top_k: int = 16
     reranker_enabled: bool = True
     reranker_model: str = "../models/bge-reranker-base"
 
     llm_provider: str = "llama_cpp"
     llm_model_path: Path = Path("../models/Qwen3-4B-Q4_K_M.gguf")
     llm_model_name: str = "Qwen3-4B-Q4_K_M"
-    llm_n_ctx: int = 4096
-    llm_max_tokens: int = 400
+    llm_n_ctx: int = 8192
+    llm_max_tokens: int = 1536
+    llm_history_user_chars: int = 3000
+    llm_history_assistant_chars: int = 2500
     llm_temperature: float = 0.1
-    llm_fallback_to_stub: bool = True
+    # Если false — при сбое или пустом ответе Qwen не подменяем ответ фрагментами, а ошибка уходит в API.
+    llm_fallback_to_stub: bool = False
 
     @field_validator("files_root", mode="before")
     @classmethod

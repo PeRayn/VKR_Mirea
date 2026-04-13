@@ -1,136 +1,185 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 
 export default function ChatPage({ token, onUnauthorized }) {
   const [chats, setChats] = useState([]);
-  const [activeChatId, setActiveChatId] = useState("");
+  const [activeId, setActiveId] = useState("");
   const [messages, setMessages] = useState([]);
   const [question, setQuestion] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [thinking, setThinking] = useState(false);
   const [error, setError] = useState("");
+  const [removingId, setRemovingId] = useState("");
+  const bottomRef = useRef(null);
 
-  async function loadChats() {
-    const payload = await api("/chats", {}, token, onUnauthorized);
-    setChats(payload);
-    if (payload.length > 0 && !activeChatId) {
-      setActiveChatId(payload[0].id);
+  const loadChats = useCallback(async () => {
+    try {
+      const list = await api("/chats", {}, token, onUnauthorized);
+      setChats(list);
+      if (list.length > 0 && !activeId) setActiveId(list[0].id);
+    } catch (e) {
+      setError(String(e.message ?? e));
     }
-  }
+  }, [token, onUnauthorized]);
 
-  async function loadMessages(chatId) {
-    if (!chatId) {
-      setMessages([]);
-      return;
+  const loadMessages = useCallback(async (chatId) => {
+    if (!chatId) { setMessages([]); return; }
+    try {
+      setMessages(await api(`/chats/${chatId}/messages`, {}, token, onUnauthorized));
+    } catch (e) {
+      setError(String(e.message ?? e));
     }
-    const payload = await api(`/chats/${chatId}/messages`, {}, token, onUnauthorized);
-    setMessages(payload);
-  }
+  }, [token, onUnauthorized]);
 
-  useEffect(() => {
-    loadChats().catch((e) => setError(String(e.message ?? e)));
-  }, []);
-
-  useEffect(() => {
-    loadMessages(activeChatId).catch((e) => setError(String(e.message ?? e)));
-  }, [activeChatId]);
+  useEffect(() => { loadChats(); }, [loadChats]);
+  useEffect(() => { loadMessages(activeId); }, [activeId, loadMessages]);
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
   async function createChat() {
     setError("");
     try {
-      const chat = await api(
-        "/chats",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: `Chat ${new Date().toLocaleString()}` })
-        },
-        token,
-        onUnauthorized
-      );
+      const chat = await api("/chats", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: `Чат ${new Date().toLocaleString("ru")}` }),
+      }, token, onUnauthorized);
       await loadChats();
-      setActiveChatId(chat.id);
-      await loadMessages(chat.id);
+      setActiveId(chat.id);
     } catch (e) {
       setError(String(e.message ?? e));
     }
   }
 
-  async function askQuestion(event) {
-    event.preventDefault();
-    if (!activeChatId || !question.trim()) {
-      return;
-    }
-    setLoading(true);
+  async function deleteChat(chatId) {
+    if (!confirm("Удалить этот чат и все сообщения?")) return;
     setError("");
+    setRemovingId(chatId);
     try {
-      await api(
-        `/chats/${activeChatId}/ask`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question: question.trim() })
-        },
-        token,
-        onUnauthorized
-      );
-      setQuestion("");
-      await loadMessages(activeChatId);
+      await api(`/chats/${chatId}`, { method: "DELETE" }, token, onUnauthorized);
+      await new Promise((r) => setTimeout(r, 300));
+      if (activeId === chatId) {
+        setActiveId("");
+        setMessages([]);
+      }
+      setChats((prev) => prev.filter((c) => c.id !== chatId));
     } catch (e) {
       setError(String(e.message ?? e));
     } finally {
-      setLoading(false);
+      setRemovingId("");
+    }
+  }
+
+  async function ask(e) {
+    e.preventDefault();
+    const q = question.trim();
+    if (!activeId || !q) return;
+
+    setMessages((prev) => [...prev, { id: `tmp-${Date.now()}`, role: "user", content: q }]);
+    setQuestion("");
+    setThinking(true);
+    setError("");
+    try {
+      await api(`/chats/${activeId}/ask`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: q }),
+      }, token, onUnauthorized);
+      await loadMessages(activeId);
+    } catch (e) {
+      setError(String(e.message ?? e));
+    } finally {
+      setThinking(false);
+    }
+  }
+
+  function onKeyDown(e) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      ask(e);
     }
   }
 
   return (
-    <section className="card chat-layout">
-      <aside>
-        <div className="chat-title-row">
-          <h2>Chats</h2>
-          <button onClick={createChat}>New</button>
+    <div className="chat-wrapper">
+      {/* sidebar */}
+      <div className="chat-sidebar">
+        <div className="chat-sidebar-header">
+          <h3>Чаты</h3>
+          <button className="btn btn-primary btn-sm" onClick={createChat}>+ Новый</button>
         </div>
         <ul className="chat-list">
-          {chats.map((chat) => (
-            <li key={chat.id}>
+          {chats.map((c) => (
+            <li key={c.id} className={`chat-list-item${c.id === removingId ? " removing" : ""}`}>
+              <button className={c.id === activeId ? "active" : ""} onClick={() => setActiveId(c.id)}>
+                {c.title}
+              </button>
               <button
-                className={chat.id === activeChatId ? "active" : ""}
-                onClick={() => setActiveChatId(chat.id)}
+                className="chat-delete-btn"
+                title="Удалить чат"
+                onClick={(e) => { e.stopPropagation(); deleteChat(c.id); }}
               >
-                {chat.title}
+                ✕
               </button>
             </li>
           ))}
+          {chats.length === 0 && (
+            <li style={{ padding: "16px", color: "var(--text-dim)", fontSize: 13, textAlign: "center" }}>
+              Нет чатов
+            </li>
+          )}
         </ul>
-      </aside>
-      <div>
-        <h2>Ask documents</h2>
-        {error ? <pre className="error">{error}</pre> : null}
-        <div className="messages">
-          {messages.map((message) => (
-            <article key={message.id} className={`message ${message.role}`}>
-              <h4>{message.role}</h4>
-              <p>{message.content}</p>
-              {message.sources?.length ? (
-                <small>
-                  Sources:{" "}
-                  {message.sources.map((source) => source.file_name).join(", ")}
-                </small>
-              ) : null}
-            </article>
-          ))}
-        </div>
-        <form onSubmit={askQuestion} className="ask-form">
-          <textarea
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            placeholder="Ask a question about your files"
-            rows={4}
-          />
-          <button type="submit" disabled={loading || !activeChatId}>
-            {loading ? "Thinking..." : "Ask"}
-          </button>
-        </form>
       </div>
-    </section>
+
+      {/* main */}
+      <div className="chat-main">
+        {error && <div className="error-box" style={{ margin: "12px 16px 0" }}>{error}</div>}
+
+        {!activeId ? (
+          <div className="chat-empty">
+            Создайте чат, чтобы задать вопрос по вашим документам
+          </div>
+        ) : (
+          <>
+            <div className="chat-messages">
+              {messages.length === 0 && !thinking && (
+                <div className="chat-empty">Задайте вопрос — система найдёт ответ в ваших файлах</div>
+              )}
+              {messages.map((m) => (
+                <div key={m.id} className={`msg ${m.role}`}>
+                  <div className="msg-role">{m.role === "user" ? "Вы" : "Ассистент"}</div>
+                  {m.content}
+                  {m.sources?.length > 0 && (
+                    <div className="msg-sources">
+                      Источники: {m.sources.map((s) => s.file_name).join(", ")}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {thinking && (
+                <div className="msg assistant">
+                  <div className="msg-role">Ассистент</div>
+                  <span className="spinner" /> Думаю...
+                </div>
+              )}
+              <div ref={bottomRef} />
+            </div>
+
+            <form onSubmit={ask} className="chat-input-row">
+              <textarea
+                className="textarea"
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                onKeyDown={onKeyDown}
+                placeholder="Задайте вопрос по вашим документам..."
+                rows={1}
+                disabled={thinking}
+              />
+              <button type="submit" className="btn btn-primary" disabled={thinking || !question.trim()}>
+                {thinking ? <span className="spinner" /> : "Отправить"}
+              </button>
+            </form>
+          </>
+        )}
+      </div>
+    </div>
   );
 }

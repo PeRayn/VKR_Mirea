@@ -1,54 +1,85 @@
 import { useState } from "react";
 import { api } from "../api";
 
-export default function AuthPage({ onAuthenticated }) {
+export default function AuthPage({ onAuth }) {
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const endpoint = mode === "login" ? "/auth/login" : "/auth/register";
+  const isLogin = mode === "login";
 
-  async function submit(event) {
-    event.preventDefault();
+  async function submit(e) {
+    e.preventDefault();
     setError("");
+    setLoading(true);
     try {
-      const payload = await api(endpoint, {
+      const res = await api(isLogin ? "/auth/login" : "/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email, password }),
       });
-      onAuthenticated(payload.access_token);
-    } catch (e) {
-      setError(String(e.message ?? e));
+      onAuth(res.access_token);
+    } catch (err) {
+      setError(String(err.message ?? err));
+    } finally {
+      setLoading(false);
     }
   }
 
   return (
-    <section className="card">
-      <h2>{mode === "login" ? "Login" : "Register"}</h2>
-      <form onSubmit={submit}>
-        <input
-          type="email"
-          placeholder="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
-        <input
-          type="password"
-          placeholder="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          minLength={8}
-          required
-        />
-        <button type="submit">{mode === "login" ? "Sign in" : "Sign up"}</button>
-      </form>
-      <button onClick={() => setMode(mode === "login" ? "register" : "login")}>
-        {mode === "login" ? "Need an account?" : "Have an account?"}
-      </button>
-      {error && <pre className="error">{error}</pre>}
-    </section>
+    <div className="auth-wrapper">
+      <div className="card auth-card">
+        <h2>{isLogin ? "Вход" : "Регистрация"}</h2>
+        <p className="subtitle">
+          {isLogin
+            ? "Войдите, чтобы получить доступ к вашим документам"
+            : "Создайте аккаунт для работы с Умным Диском"}
+        </p>
+
+        <form onSubmit={submit} className="form-stack">
+          <div className="form-group">
+            <label htmlFor="email">Email</label>
+            <input
+              id="email"
+              className="input"
+              type="email"
+              placeholder="user@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              autoFocus
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="password">Пароль</label>
+            <input
+              id="password"
+              className="input"
+              type="password"
+              placeholder="Минимум 8 символов"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              minLength={8}
+              required
+            />
+          </div>
+
+          {error && <div className="error-box">{error}</div>}
+
+          <button type="submit" className="btn btn-primary" disabled={loading} style={{ width: "100%" }}>
+            {loading ? <span className="spinner" /> : isLogin ? "Войти" : "Зарегистрироваться"}
+          </button>
+        </form>
+
+        <div className="auth-switch">
+          {isLogin ? "Нет аккаунта? " : "Уже есть аккаунт? "}
+          <button onClick={() => { setMode(isLogin ? "register" : "login"); setError(""); }}>
+            {isLogin ? "Зарегистрироваться" : "Войти"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
