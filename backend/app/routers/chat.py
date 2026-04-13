@@ -105,21 +105,23 @@ async def ask(
 
     retrieval_query = build_retrieval_query(payload.question, chat_history or None)
     query_vector = embed_texts([retrieval_query])[0]
+    distance_col = Chunk.embedding.cosine_distance(query_vector).label("distance")
     matched = (
         await db.execute(
-            select(Chunk, FileRecord)
+            select(Chunk, FileRecord, distance_col)
             .join(FileRecord, FileRecord.id == Chunk.file_id)
             .where(Chunk.user_id == user.id, FileRecord.user_id == user.id)
-            .order_by(Chunk.embedding.cosine_distance(query_vector))
+            .order_by(distance_col)
             .limit(settings.retrieval_top_k)
         )
     ).all()
 
     retrieved_contexts: list[dict] = []
-    for chunk, file_record in matched:
+    for chunk, file_record, distance in matched:
         retrieved_contexts.append(
             {
                 "content": chunk.content,
+                "cosine_distance": float(distance),
                 "source": {
                     "file_id": str(file_record.id),
                     "file_name": file_record.original_name,

@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     retrieval_top_k: int = 16
     reranker_enabled: bool = True
     reranker_model: str = "../models/bge-reranker-base"
+    reranker_min_score: float = -1.0
+    relevance_max_distance: float = 0.75
 
     llm_provider: str = "llama_cpp"
     llm_model_path: Path = Path("../models/Qwen3-4B-Q4_K_M.gguf")
