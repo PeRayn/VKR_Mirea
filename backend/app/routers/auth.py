@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,6 +10,7 @@ from app.deps import get_current_user
 from app.models import User
 from app.schemas import LoginIn, RegisterIn, TokenOut, UserOut
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
@@ -21,6 +24,7 @@ async def register(payload: RegisterIn, db: AsyncSession = Depends(get_db)) -> T
     db.add(user)
     await db.commit()
     await db.refresh(user)
+    logger.info("User registered: %s (id=%s)", user.email, user.id)
 
     token = create_access_token(str(user.id))
     return TokenOut(access_token=token)
@@ -30,8 +34,10 @@ async def register(payload: RegisterIn, db: AsyncSession = Depends(get_db)) -> T
 async def login(payload: LoginIn, db: AsyncSession = Depends(get_db)) -> TokenOut:
     user = await db.scalar(select(User).where(User.email == payload.email.lower()))
     if not user or not verify_password(payload.password, user.password_hash):
+        logger.warning("Failed login attempt for %s", payload.email)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
+    logger.info("User logged in: %s (id=%s)", user.email, user.id)
     token = create_access_token(str(user.id))
     return TokenOut(access_token=token)
 

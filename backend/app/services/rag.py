@@ -164,33 +164,20 @@ def build_retrieval_query(question: str, chat_history: list[dict[str, str]] | No
     return out
 
 
-def _filter_by_distance(contexts: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    threshold = settings.relevance_max_distance
-    return [c for c in contexts if c.get("cosine_distance") is None or c["cosine_distance"] <= threshold]
-
-
 def rerank_contexts(rerank_query: str, contexts: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    filtered = _filter_by_distance(contexts)
-    if not filtered:
-        filtered = contexts[:1]
-
     reranker = get_reranker()
-    if not reranker or len(filtered) < 2:
-        return filtered[: settings.top_k]
+    if not reranker or len(contexts) < 2:
+        return contexts[: settings.top_k]
 
-    pairs = [(rerank_query, context["content"]) for context in filtered]
+    pairs = [(rerank_query, context["content"]) for context in contexts]
     scores = reranker.predict(pairs)
     rescored = []
-    for context, score in zip(filtered, scores, strict=True):
+    for context, score in zip(contexts, scores, strict=True):
         updated = dict(context)
         updated["rerank_score"] = float(score)
         rescored.append(updated)
     rescored.sort(key=lambda item: item["rerank_score"], reverse=True)
-
-    min_score = settings.reranker_min_score
-    top = rescored[: settings.top_k]
-    relevant = [c for c in top if c["rerank_score"] >= min_score]
-    return relevant if relevant else top[:1]
+    return rescored[: settings.top_k]
 
 
 def _truncate_snippet(text: str, max_len: int = 380) -> str:

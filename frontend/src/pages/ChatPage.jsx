@@ -15,7 +15,7 @@ export default function ChatPage({ token, onUnauthorized }) {
     try {
       const list = await api("/chats", {}, token, onUnauthorized);
       setChats(list);
-      if (list.length > 0 && !activeId) setActiveId(list[0].id);
+      setActiveId((prev) => prev || (list.length > 0 ? list[0].id : ""));
     } catch (e) {
       setError(String(e.message ?? e));
     }

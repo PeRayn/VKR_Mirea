@@ -1,4 +1,6 @@
+import logging
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -17,6 +19,7 @@ from app.services.rag import (
 )
 from app.core.config import get_settings
 
+logger = logging.getLogger(__name__)
 settings = get_settings()
 router = APIRouter(prefix="/chats", tags=["chat"])
 
@@ -33,6 +36,7 @@ def _compact_sources(ranked: list[dict]) -> list[dict]:
     return [by_file[fid] for fid in order]
 
 
+
 @router.post("", response_model=ChatOut)
 async def create_chat(
     payload: ChatCreateIn,
@@ -43,6 +47,7 @@ async def create_chat(
     db.add(chat)
     await db.commit()
     await db.refresh(chat)
+    logger.info("Chat created: id=%s user=%s title='%s'", chat.id, user.email, payload.title)
     return ChatOut.model_validate(chat, from_attributes=True)
 
 
@@ -63,6 +68,7 @@ async def delete_chat(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
     await db.delete(chat)
     await db.commit()
+    logger.info("Chat deleted: id=%s user=%s", chat_id, user.email)
 
 
 @router.get("/{chat_id}/messages", response_model=list[MessageOut])
@@ -105,23 +111,21 @@ async def ask(
 
     retrieval_query = build_retrieval_query(payload.question, chat_history or None)
     query_vector = embed_texts([retrieval_query])[0]
-    distance_col = Chunk.embedding.cosine_distance(query_vector).label("distance")
     matched = (
         await db.execute(
-            select(Chunk, FileRecord, distance_col)
+            select(Chunk, FileRecord)
             .join(FileRecord, FileRecord.id == Chunk.file_id)
             .where(Chunk.user_id == user.id, FileRecord.user_id == user.id)
-            .order_by(distance_col)
+            .order_by(Chunk.embedding.cosine_distance(query_vector))
             .limit(settings.retrieval_top_k)
         )
     ).all()
 
     retrieved_contexts: list[dict] = []
-    for chunk, file_record, distance in matched:
+    for chunk, file_record in matched:
         retrieved_contexts.append(
             {
                 "content": chunk.content,
-                "cosine_distance": float(distance),
                 "source": {
                     "file_id": str(file_record.id),
                     "file_name": file_record.original_name,
@@ -141,8 +145,10 @@ async def ask(
             detail=str(exc),
         ) from exc
 
-    db.add(Message(chat_id=chat.id, user_id=user.id, role="user", content=payload.question))
-    db.add(Message(chat_id=chat.id, user_id=user.id, role="assistant", content=answer, sources=sources))
+    now = datetime.now(timezone.utc)
+    db.add(Message(chat_id=chat.id, user_id=user.id, role="user", content=payload.question, created_at=now))
+    db.add(Message(chat_id=chat.id, user_id=user.id, role="assistant", content=answer, sources=sources, created_at=now + timedelta(milliseconds=1)))
     await db.commit()
+    logger.info("Question answered: chat=%s user=%s question='%s' sources=%d", chat.id, user.email, payload.question[:80], len(sources))
 
     return AskOut(answer=answer, sources=sources, chat_id=chat.id)

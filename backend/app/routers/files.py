@@ -1,3 +1,4 @@
+import logging
 import uuid
 from pathlib import Path
 from urllib.parse import quote
@@ -15,6 +16,7 @@ from app.services.rag import chunk_text, embed_texts, extract_text
 from app.services.storage import storage
 from app.core.config import get_settings
 
+logger = logging.getLogger(__name__)
 settings = get_settings()
 router = APIRouter(prefix="/files", tags=["files"])
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md"}
@@ -89,6 +91,7 @@ async def upload_file(
 
     await db.commit()
     await db.refresh(file_record)
+    logger.info("File uploaded: id=%s user=%s name='%s' size=%d chunks=%d", file_record.id, user.email, file_record.original_name, len(content), len(chunks))
     return FileOut.model_validate(file_record, from_attributes=True)
 
 
@@ -177,4 +180,5 @@ async def delete_file(
     await db.delete(file_record)
     storage.delete(user.id, file_record.stored_name)
     await db.commit()
+    logger.info("File deleted: id=%s user=%s name='%s'", file_id, user.email, file_record.original_name)
     return {"status": "ok"}
