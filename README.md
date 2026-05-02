@@ -83,5 +83,3 @@ LLM_PROVIDER=llama_cpp
 LLM_MODEL_PATH=../models/Qwen3-4B-Q4_K_M.gguf
 LLM_FALLBACK_TO_STUB=true
 ```
-
-чередь.
